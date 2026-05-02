@@ -6,11 +6,11 @@ on:
       action:
         description: "¿Qué quieres hacer con el bot?"
         required: true
-        default: "restart"
+        default: "redeploy"
         type: choice
         options:
-          - restart
           - redeploy
+          - restart
 
 jobs:
   control:
@@ -23,14 +23,18 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Restart bot
-        if: ${{ github.event.inputs.action == 'restart' }}
-        run: railway service restart
+      - name: Redeploy bot (sube nuevo código)
+        if: ${{ github.event.inputs.action == 'redeploy' }}
+        run: railway up --service ca622ead-b524-4296-9a6a-59a33b6b38a5 --environment 70546448-a18d-471a-aec0-05206d08d502 --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
-      - name: Redeploy bot
-        if: ${{ github.event.inputs.action == 'redeploy' }}
-        run: railway up --service bot --detach
+      - name: Restart bot (reinicia sin cambios)
+        if: ${{ github.event.inputs.action == 'restart' }}
+        run: |
+          curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query":"mutation { serviceInstanceRedeploy(serviceId: \"ca622ead-b524-4296-9a6a-59a33b6b38a5\", environmentId: \"70546448-a18d-471a-aec0-05206d08d502\") }"}'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
