@@ -1,23 +1,14 @@
-name: Deploy to Railway
+name: 🚀 Deploy Bot a Railway
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      action:
-        description: "Acción a realizar"
-        required: true
-        default: "deploy"
-        type: choice
-        options:
-          - deploy
-          - restart
 
 jobs:
   deploy:
-    name: 🚀 Deploy Bot
+    name: Deploy a Railway
     runs-on: ubuntu-latest
     steps:
       - name: Checkout código
@@ -27,6 +18,6 @@ jobs:
         run: npm install -g @railway/cli
 
       - name: Deploy a Railway
-        run: railway up --service bot --detach
+        run: railway up --service ca622ead-b524-4296-9a6a-59a33b6b38a5 --environment 70546448-a18d-471a-aec0-05206d08d502 --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
