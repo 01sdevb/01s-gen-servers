@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd artifacts/api-server && npm install --include=dev && node ./build.mjs"
+buildCommand = "cd artifacts/api-server && npm install --include=dev --legacy-peer-deps && node ./build.mjs"
 
 [deploy]
 startCommand = "node --enable-source-maps artifacts/api-server/dist/index.mjs"
