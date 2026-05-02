@@ -1,6 +1,7 @@
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import { createDiscordBot } from "./bot/discord.js";
+import { startTikTokPoller } from "./bot/notifier.js";
 
 const rawPort = process.env["PORT"];
 
@@ -32,5 +33,9 @@ if (!token) {
   const bot = createDiscordBot();
   bot.login(token).catch((err) => {
     logger.error({ err }, "Failed to login to Discord");
+  });
+
+  bot.once("ready", () => {
+    startTikTokPoller(bot);
   });
 }
