@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm install -g pnpm && pnpm install --no-frozen-lockfile --production=false && pnpm --filter @workspace/api-server run build"
+buildCommand = "cd artifacts/api-server && npm install --include=dev && node ./build.mjs"
 
 [deploy]
 startCommand = "node --enable-source-maps artifacts/api-server/dist/index.mjs"
