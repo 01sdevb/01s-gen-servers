@@ -1,0 +1,36 @@
+name: 🤖 Control del Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "¿Qué quieres hacer con el bot?"
+        required: true
+        default: "restart"
+        type: choice
+        options:
+          - restart
+          - redeploy
+
+jobs:
+  control:
+    name: Controlar Bot en Railway
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Restart bot
+        if: ${{ github.event.inputs.action == 'restart' }}
+        run: railway service restart
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Redeploy bot
+        if: ${{ github.event.inputs.action == 'redeploy' }}
+        run: railway up --service bot --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
