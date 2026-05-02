@@ -15,9 +15,23 @@ import {
   buildJoinLink,
   type JoinLinks,
 } from "./roblox.js";
+import { fetchTikTokProfile } from "./tiktok.js";
+import {
+  addWatch,
+  removeWatch,
+  getWatches,
+  getWatch,
+} from "./store.js";
+import { NOTIFY_CHANNEL_ID } from "./notifier.js";
 
 const cooldowns = new Map<string, number>();
 const COOLDOWN_MS = 60_000;
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return n.toString();
+}
 
 export function createDiscordBot(): Client {
   const client = new Client({
@@ -34,12 +48,219 @@ export function createDiscordBot(): Client {
 
   client.on(Events.MessageCreate, async (message: Message) => {
     if (message.author.bot) return;
+
+    const content = message.content.trim();
+    const lower = content.toLowerCase();
+
+    // ── NOTIFY commands (channel 1500215767239495780) ──
+    if (message.channelId === NOTIFY_CHANNEL_ID) {
+      if (!lower.startsWith("notify") && !lower.startsWith("unnotify")) return;
+
+      const parts = content.trim().split(/\s+/);
+      const cmd = parts[0]!.toLowerCase();
+
+      // notify list
+      if (cmd === "notify" && parts[1]?.toLowerCase() === "list") {
+        const watches = getWatches();
+        if (watches.length === 0) {
+          await message.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0x010101)
+                .setTitle("📋 Lista de notificaciones TikTok")
+                .setDescription("No hay cuentas en la lista todavía.\nUsa `notify [usuario]` para agregar una.")
+                .setFooter({ text: WATERMARK }),
+            ],
+          });
+          return;
+        }
+
+        const lines = watches.map(
+          (w, i) =>
+            `**${i + 1}.** [@${w.username}](https://www.tiktok.com/@${w.username}) — ${formatNumber(w.followers)} seguidores • ${w.videoCount ?? "?"} videos`
+        );
+
+        await message.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0x010101)
+              .setTitle(`📋 TikTok Notificaciones (${watches.length})`)
+              .setDescription(lines.join("\n"))
+              .setFooter({ text: WATERMARK }),
+          ],
+        });
+        return;
+      }
+
+      // unnotify [username]
+      if (cmd === "unnotify") {
+        const username = parts[1];
+        if (!username) {
+          await message.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle("❌ Falta el usuario")
+                .setDescription("Uso correcto: `unnotify [usuario_de_tiktok]`")
+                .setFooter({ text: WATERMARK }),
+            ],
+          });
+          return;
+        }
+
+        const removed = removeWatch(username);
+        await message.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor(removed ? 0x00cc44 : 0xff8800)
+              .setTitle(
+                removed ? "✅ Notificación eliminada" : "⚠️ Usuario no encontrado"
+              )
+              .setDescription(
+                removed
+                  ? `Dejé de monitorear a **@${username}** en TikTok.`
+                  : `**@${username}** no estaba en la lista de notificaciones.`
+              )
+              .setFooter({ text: WATERMARK }),
+          ],
+        });
+        return;
+      }
+
+      // notify [username]
+      if (cmd === "notify") {
+        const username = parts[1];
+        if (!username) {
+          await message.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle("❌ Falta el usuario")
+                .setDescription(
+                  "Uso correcto: `notify [usuario_de_tiktok]`\n\nEjemplo: `notify charlidamelio`"
+                )
+                .setFooter({ text: WATERMARK }),
+            ],
+          });
+          return;
+        }
+
+        if (getWatch(username)) {
+          await message.reply({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xff8800)
+                .setTitle("⚠️ Ya en la lista")
+                .setDescription(
+                  `**@${username}** ya está siendo monitoreado.\nUsa \`unnotify ${username}\` para quitar las notificaciones.`
+                )
+                .setFooter({ text: WATERMARK }),
+            ],
+          });
+          return;
+        }
+
+        const loadingEmbed = new EmbedBuilder()
+          .setColor(0x010101)
+          .setTitle("⏳ Buscando cuenta...")
+          .setDescription(`Buscando **@${username}** en TikTok...`)
+          .setFooter({ text: WATERMARK });
+
+        const reply = await message.reply({ embeds: [loadingEmbed] });
+
+        try {
+          const profile = await fetchTikTokProfile(username);
+
+          if (!profile || !profile.secUid) {
+            await reply.edit({
+              embeds: [
+                new EmbedBuilder()
+                  .setColor(0xff0000)
+                  .setTitle("❌ Cuenta no encontrada")
+                  .setDescription(
+                    `No encontré la cuenta **@${username}** en TikTok.\nVerifica que el usuario existe y es público.`
+                  )
+                  .setFooter({ text: WATERMARK }),
+              ],
+            });
+            return;
+          }
+
+          addWatch({
+            username: profile.username,
+            secUid: profile.secUid,
+            nickname: profile.nickname,
+            lastVideoCount: profile.videoCount,
+            avatarUrl: profile.avatarUrl,
+            followers: profile.followers,
+            totalLikes: profile.totalLikes,
+            addedAt: Date.now(),
+          });
+
+          const successEmbed = new EmbedBuilder()
+            .setColor(0x00cc44)
+            .setAuthor({
+              name: `@${profile.username}${profile.verified ? " ✓" : ""}`,
+              iconURL: profile.avatarUrl || undefined,
+              url: `https://www.tiktok.com/@${profile.username}`,
+            })
+            .setTitle("✅ Notificaciones activadas")
+            .setDescription(
+              `Ahora recibirás notificaciones cuando **${profile.nickname}** suba nuevos videos.\n\n` +
+              (profile.bio ? `> ${profile.bio}\n\n` : "") +
+              `[Ver perfil en TikTok](https://www.tiktok.com/@${profile.username})`
+            )
+            .addFields(
+              {
+                name: "👥 Seguidores",
+                value: formatNumber(profile.followers),
+                inline: true,
+              },
+              {
+                name: "❤️ Likes totales",
+                value: formatNumber(profile.totalLikes),
+                inline: true,
+              },
+              {
+                name: "🎥 Videos",
+                value: profile.videoCount.toString(),
+                inline: true,
+              },
+              {
+                name: "🔔 Check cada",
+                value: "10 minutos",
+                inline: true,
+              }
+            )
+            .setFooter({ text: WATERMARK })
+            .setTimestamp();
+
+          if (profile.avatarUrl) successEmbed.setThumbnail(profile.avatarUrl);
+
+          await reply.edit({ embeds: [successEmbed] });
+        } catch (err) {
+          logger.error({ err, username }, "Error adding TikTok notify");
+          await reply.edit({
+            embeds: [
+              new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle("❌ Error")
+                .setDescription("Ocurrió un error al buscar la cuenta. Inténtalo de nuevo.")
+                .setFooter({ text: WATERMARK }),
+            ],
+          });
+        }
+        return;
+      }
+
+      return;
+    }
+
+    // ── GEN commands (channel 1499958245526081727) ──
     if (message.channelId !== ALLOWED_CHANNEL_ID) return;
+    if (!lower.startsWith("gen ") && lower !== "gen") return;
 
-    const content = message.content.trim().toLowerCase();
-    if (!content.startsWith("gen ") && content !== "gen") return;
-
-    const parts = content.split(/\s+/);
+    const parts = lower.split(/\s+/);
     const keyword = parts[1];
     const subKeyword = parts[2];
 
